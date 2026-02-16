@@ -1,12 +1,14 @@
+# syntax=docker/dockerfile:1
 # ──────────────────────────────────────────────────────
 # Shotlin Dashboard — Multi-stage Production Dockerfile
+# Optimized for 10GB SSD (npm cache mounts)
 # ──────────────────────────────────────────────────────
 
 # ── Stage 1: Dependencies ──
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # ── Stage 2: Build ──
 FROM node:20-alpine AS builder
@@ -25,8 +27,9 @@ RUN npm run build
 FROM node:20-alpine AS production
 WORKDIR /app
 
-# Security: run as non-root
-RUN addgroup -g 1001 -S shotlin && \
+# Security: run as non-root + dumb-init
+RUN apk add --no-cache dumb-init && \
+    addgroup -g 1001 -S shotlin && \
     adduser -S shotlin -u 1001 -G shotlin
 
 # Copy only what's needed for production
@@ -47,4 +50,5 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3001/ || exit 1
 
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "server.js"]
